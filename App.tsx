@@ -23,6 +23,8 @@ const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Cache for generated video URLs to prevent regeneration on navigation
   const [videoCache, setVideoCache] = useState<Record<string, string>>({});
+  // Cache for generated audio lectures
+  const [audioCache, setAudioCache] = useState<Record<string, string>>({});
 
   // --- Effects ---
   useEffect(() => {
@@ -78,6 +80,10 @@ const App: React.FC = () => {
     setVideoCache(prev => ({ ...prev, [lessonId]: url }));
   };
 
+  const handleAudioGenerated = (lessonId: string, url: string) => {
+    setAudioCache(prev => ({ ...prev, [lessonId]: url }));
+  };
+
   const handleReset = () => {
     if (window.confirm("Are you sure you want to exit? This will reset all your progress.")) {
       const initialState = {
@@ -89,6 +95,7 @@ const App: React.FC = () => {
       };
       setUser(initialState);
       setVideoCache({}); // Clear cached videos
+      setAudioCache({}); // Clear cached audio
       localStorage.removeItem('esg_user');
       setSidebarOpen(false);
     }
@@ -233,6 +240,8 @@ const App: React.FC = () => {
                     hasNext={hasNextLesson}
                     cachedVideoUrl={videoCache[currentLesson.id]}
                     onVideoGenerated={(url) => handleVideoGenerated(currentLesson.id, url)}
+                    cachedAudioUrl={audioCache[currentLesson.id]}
+                    onAudioGenerated={(url) => handleAudioGenerated(currentLesson.id, url)}
                 />
             ) : (
                 <div className="flex items-center justify-center h-full text-slate-400">

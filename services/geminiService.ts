@@ -103,3 +103,104 @@ export const generateLessonVideo = async (
     throw error;
   }
 };
+
+export const generateAudioLecture = async (
+  title: string,
+  summary: string
+): Promise<string | null> => {
+  const ai = getClient();
+  if (!ai) return null;
+
+  try {
+    // 1. Generate the Script
+    // We ask the model to write a script suitable for a mature British professor
+    const scriptPrompt = `
+      Write an engaging, educational lecture script for a university course.
+      Topic: ${title}
+      Key Concepts: ${summary}
+      Persona: A distinguished, mature British professor. Deep, authoritative, yet warm voice.
+      Format: Monologue.
+      Length: Approximately 400-500 words (roughly 3-4 minutes spoken).
+      Content: Explain the concepts clearly, provide a real-world example, and explain why it matters. 
+      Style: Use sophisticated but accessible language. 
+      Start with: "Welcome back. Today we are delving into ${title}..."
+    `;
+
+    const scriptResp = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: scriptPrompt,
+    });
+    const script = scriptResp.text || "";
+
+    if (!script) return null;
+
+    // 2. Convert to Speech
+    // We use the Fenrir voice for a deeper, more mature tone
+    const ttsResp = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: script }] }],
+      config: {
+        responseModalities: ['AUDIO'], 
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Fenrir' },
+          },
+        },
+      },
+    });
+
+    const base64 = ttsResp.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64) return null;
+
+    // 3. Convert PCM to WAV
+    // The API returns raw PCM (24kHz). Browsers need a WAV container to play it easily.
+    const audioBlob = base64ToWavBlob(base64);
+    return URL.createObjectURL(audioBlob);
+
+  } catch (e) {
+    console.error("Audio Gen Error", e);
+    return null;
+  }
+};
+
+// Helper: Convert Base64 PCM string to WAV Blob
+function base64ToWavBlob(base64: string): Blob {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  // Gemini output is usually 24kHz, 1 channel, 16-bit PCM
+  const wavHeader = getWavHeader(len, 24000, 1, 16);
+  return new Blob([wavHeader, bytes], { type: 'audio/wav' });
+}
+
+// Helper: Construct WAV Header
+function getWavHeader(dataLength: number, sampleRate: number, numChannels: number, bitsPerSample: number) {
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+
+  const writeString = (offset: number, string: string) => {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataLength, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true); // Subchunk1Size
+  view.setUint16(20, 1, true); // AudioFormat (1 = PCM)
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numChannels * (bitsPerSample / 8), true); // ByteRate
+  view.setUint16(32, numChannels * (bitsPerSample / 8), true); // BlockAlign
+  view.setUint16(34, bitsPerSample, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataLength, true);
+
+  return header;
+}

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Lesson } from '../types';
-import { PlayCircle, FileText, Lightbulb, MessageSquare, Loader2, ArrowRight, Video, AlertCircle } from 'lucide-react';
+import { PlayCircle, FileText, Lightbulb, MessageSquare, Loader2, ArrowRight, Video, AlertCircle, Headphones } from 'lucide-react';
 import { Quiz } from './Quiz';
-import { askAITutor, generateLessonVideo } from '../services/geminiService';
+import { askAITutor, generateLessonVideo, generateAudioLecture } from '../services/geminiService';
 
 interface LessonViewProps {
   lesson: Lesson;
@@ -12,6 +12,8 @@ interface LessonViewProps {
   hasNext: boolean;
   cachedVideoUrl?: string;
   onVideoGenerated: (url: string) => void;
+  cachedAudioUrl?: string;
+  onAudioGenerated: (url: string) => void;
 }
 
 export const LessonView: React.FC<LessonViewProps> = ({ 
@@ -21,7 +23,9 @@ export const LessonView: React.FC<LessonViewProps> = ({
   onNext,
   hasNext,
   cachedVideoUrl,
-  onVideoGenerated
+  onVideoGenerated,
+  cachedAudioUrl,
+  onAudioGenerated
 }) => {
   const [activeTab, setActiveTab] = useState<'video' | 'summary'>('video');
   const [aiQuestion, setAiQuestion] = useState('');
@@ -34,7 +38,10 @@ export const LessonView: React.FC<LessonViewProps> = ({
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
   // Track if we've attempted generation for this lesson ID to avoid double calls
-  const generationAttemptedRef = useRef<string | null>(null);
+  const videoAttemptRef = useRef<string | null>(null);
+  
+  // Audio State
+  const audioAttemptRef = useRef<string | null>(null);
 
   // Reset state when lesson changes
   useEffect(() => {
@@ -44,16 +51,16 @@ export const LessonView: React.FC<LessonViewProps> = ({
     setActiveTab('video');
     setVideoError(null);
     setVideoLoading(false);
-    generationAttemptedRef.current = null;
+    videoAttemptRef.current = null;
+    audioAttemptRef.current = null;
   }, [lesson.id]);
 
   // Auto-generate video if not cached
   useEffect(() => {
     const loadVideo = async () => {
-      // If we already have it, or are loading, or already tried for this lesson, skip
-      if (cachedVideoUrl || videoLoading || generationAttemptedRef.current === lesson.id) return;
+      if (cachedVideoUrl || videoLoading || videoAttemptRef.current === lesson.id) return;
 
-      generationAttemptedRef.current = lesson.id;
+      videoAttemptRef.current = lesson.id;
       setVideoLoading(true);
       setVideoError(null);
 
@@ -72,11 +79,31 @@ export const LessonView: React.FC<LessonViewProps> = ({
       }
     };
 
-    // Trigger immediately on mount/change if in video tab
     if (activeTab === 'video' && !cachedVideoUrl) {
         loadVideo();
     }
   }, [lesson.id, cachedVideoUrl, activeTab, videoLoading, lesson.visual_guidance, onVideoGenerated]);
+
+  // Auto-generate Audio if not cached
+  useEffect(() => {
+    const loadAudio = async () => {
+      if (cachedAudioUrl || audioAttemptRef.current === lesson.id) return;
+      
+      audioAttemptRef.current = lesson.id;
+      try {
+        const url = await generateAudioLecture(lesson.title, lesson.summary);
+        if (url) {
+          onAudioGenerated(url);
+        }
+      } catch (err) {
+        console.error("Audio gen failed", err);
+      }
+    };
+
+    if (!cachedAudioUrl) {
+      loadAudio();
+    }
+  }, [lesson.id, cachedAudioUrl, lesson.title, lesson.summary, onAudioGenerated]);
 
   const handleAskAI = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,7 +120,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
   };
 
   const retryGeneration = () => {
-      generationAttemptedRef.current = null;
+      videoAttemptRef.current = null;
       setVideoLoading(false);
       // Effect will re-trigger
   };
@@ -185,6 +212,30 @@ export const LessonView: React.FC<LessonViewProps> = ({
                      </div>
                   </>
                 )}
+              </div>
+
+              {/* Audio Player Section - Directly below video */}
+              <div className="bg-slate-900 rounded-xl p-5 border border-slate-700 shadow-md flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6">
+                 <div className="flex items-center space-x-4 w-full sm:w-auto">
+                    <div className="bg-emerald-600 p-3 rounded-full shadow-lg">
+                        <Headphones className="text-white w-6 h-6" />
+                    </div>
+                    <div>
+                        <h4 className="text-white font-bold text-sm">Audio Lecture</h4>
+                        <p className="text-slate-400 text-xs">Professor's Notes (AI)</p>
+                    </div>
+                 </div>
+                 
+                 <div className="flex-1 w-full">
+                    {cachedAudioUrl ? (
+                        <audio controls className="w-full h-10 rounded" src={cachedAudioUrl} />
+                    ) : (
+                        <div className="h-10 bg-slate-800 rounded flex items-center justify-center text-emerald-400 text-xs animate-pulse border border-slate-700">
+                             <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                             <span>Generating Lecture Audio...</span>
+                        </div>
+                    )}
+                 </div>
               </div>
 
               <div className="bg-slate-50 p-6 border-t border-slate-200 rounded-xl">
