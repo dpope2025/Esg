@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Lesson } from '../types';
-import { PlayCircle, FileText, Lightbulb, MessageSquare, Loader2, ArrowRight, Video, AlertCircle, Headphones, Download } from 'lucide-react';
+import { PlayCircle, FileText, Lightbulb, MessageSquare, Loader2, ArrowRight, Video, AlertCircle, Headphones, Download, Mic, Square } from 'lucide-react';
 import { Quiz } from './Quiz';
-import { askAITutor, generateLessonVideo, generateAudioLecture } from '../services/geminiService';
+import { askAITutor, generateLessonVideo, generateAudioLecture, processVoiceQuery } from '../services/geminiService';
 import jsPDF from 'jspdf';
 
 interface LessonViewProps {
@@ -37,10 +37,14 @@ export const LessonView: React.FC<LessonViewProps> = ({
   const [showQuiz, setShowQuiz] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Voice State
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
   // Video State
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
-  // Track if we've attempted generation for this lesson ID to avoid double calls
   const videoAttemptRef = useRef<string | null>(null);
   
   // Audio State
@@ -56,6 +60,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
     setVideoLoading(false);
     videoAttemptRef.current = null;
     audioAttemptRef.current = null;
+    setIsRecording(false);
   }, [lesson.id]);
 
   // Auto-generate video if not cached
@@ -122,6 +127,69 @@ export const LessonView: React.FC<LessonViewProps> = ({
     setAiLoading(false);
   };
 
+  // Mic Logic
+  const handleMicClick = async () => {
+    if (isRecording) {
+        stopRecording();
+    } else {
+        startRecording();
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const recorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = recorder;
+        audioChunksRef.current = [];
+
+        recorder.ondataavailable = (event) => {
+            audioChunksRef.current.push(event.data);
+        };
+
+        recorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            handleVoiceQuery(audioBlob);
+            // Stop all tracks
+            stream.getTracks().forEach(track => track.stop());
+        };
+
+        recorder.start();
+        setIsRecording(true);
+    } catch (err) {
+        console.error("Error accessing microphone:", err);
+        alert("Could not access microphone. Please check permissions.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+        mediaRecorderRef.current.stop();
+        setIsRecording(false);
+    }
+  };
+
+  const handleVoiceQuery = async (audioBlob: Blob) => {
+    setAiLoading(true);
+    setAiAnswer('');
+    setAiQuestion('(Voice Query)');
+
+    const context = `Title: ${lesson.title}\nScript: ${lesson.video_script}\nSummary: ${lesson.summary}`;
+    const result = await processVoiceQuery(audioBlob, context);
+
+    setAiLoading(false);
+    if (result) {
+        setAiAnswer(result.text);
+        // Auto-play audio response
+        if (result.audioUrl) {
+            const audio = new Audio(result.audioUrl);
+            audio.play().catch(e => console.error("Auto-play failed", e));
+        }
+    } else {
+        setAiAnswer("Sorry, I couldn't process your voice message.");
+    }
+  };
+
   const retryGeneration = () => {
       videoAttemptRef.current = null;
       setVideoLoading(false);
@@ -142,12 +210,55 @@ export const LessonView: React.FC<LessonViewProps> = ({
     doc.text("Professor's Lecture Notes", 20, 30);
     doc.line(20, 32, 190, 32);
 
-    // Content
+    // Content logic to parse basic markdown for PDF
+    // We handle # Headers and - Bullets
     doc.setFont("times", "normal");
     doc.setFontSize(12);
     
-    const splitText = doc.splitTextToSize(cachedAudioScript, 170);
-    doc.text(splitText, 20, 45);
+    const lines = cachedAudioScript.split('\n');
+    let yPos = 45;
+    const lineHeight = 7;
+    const pageHeight = 280;
+
+    lines.forEach(line => {
+        if (yPos > pageHeight) {
+            doc.addPage();
+            yPos = 20;
+        }
+
+        const trimmed = line.trim();
+        if (!trimmed) {
+            yPos += lineHeight / 2;
+            return;
+        }
+
+        // Bold Headers
+        if (trimmed.startsWith('#')) {
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(14);
+            const text = trimmed.replace(/^#+\s*/, '');
+            doc.text(text, 20, yPos);
+            yPos += lineHeight * 1.5;
+            doc.setFont("times", "normal");
+            doc.setFontSize(12);
+        } 
+        // Bullet points
+        else if (trimmed.startsWith('-') || trimmed.startsWith('*')) {
+            const text = trimmed.replace(/^[-*]\s*/, '• ');
+            // Simple wrap
+            const splitText = doc.splitTextToSize(text, 170);
+            doc.text(splitText, 25, yPos); // Indent
+            yPos += splitText.length * lineHeight;
+        }
+        // Regular text
+        else {
+            // Remove markdown bold ** or __
+            const cleanText = trimmed.replace(/(\*\*|__)(.*?)\1/g, '$2');
+            const splitText = doc.splitTextToSize(cleanText, 170);
+            doc.text(splitText, 20, yPos);
+            yPos += splitText.length * lineHeight;
+        }
+    });
 
     // Footer
     doc.setFontSize(10);
@@ -398,7 +509,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
                {aiLoading && (
                    <div className="flex items-center space-x-2 text-indigo-500 text-sm">
                        <Loader2 className="w-4 h-4 animate-spin" />
-                       <span>Thinking...</span>
+                       <span>{isRecording ? 'Listening...' : 'Thinking...'}</span>
                    </div>
                )}
             </div>
@@ -408,16 +519,31 @@ export const LessonView: React.FC<LessonViewProps> = ({
                 type="text" 
                 value={aiQuestion}
                 onChange={(e) => setAiQuestion(e.target.value)}
-                placeholder="Ask a question..." 
-                className="w-full pl-3 pr-10 py-2 text-sm border border-slate-700 bg-slate-900 text-white placeholder-slate-400 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                placeholder={isRecording ? "Listening..." : "Ask a question..."}
+                disabled={isRecording}
+                className={`w-full pl-3 pr-20 py-2 text-sm border border-slate-700 bg-slate-900 text-white placeholder-slate-400 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none ${isRecording ? 'ring-2 ring-red-500' : ''}`}
               />
-              <button 
-                type="submit"
-                disabled={aiLoading || !aiQuestion.trim()}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-indigo-500 hover:text-indigo-700 disabled:opacity-50"
-              >
-                <ArrowRight className="w-4 h-4" />
-              </button>
+              
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-1">
+                  {/* Mic Button */}
+                  <button
+                    type="button"
+                    onClick={handleMicClick}
+                    className={`p-1.5 rounded-full transition-colors ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800'}`}
+                    title="Use Voice"
+                  >
+                    {isRecording ? <Square className="w-3 h-3" /> : <Mic className="w-4 h-4" />}
+                  </button>
+
+                  {/* Send Button */}
+                  <button 
+                    type="submit"
+                    disabled={aiLoading || !aiQuestion.trim() || isRecording}
+                    className="p-1.5 text-indigo-500 hover:text-indigo-700 disabled:opacity-50"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+              </div>
             </form>
             <div className="mt-2 text-xs text-slate-400 text-center">
               Powered by GCS Apex

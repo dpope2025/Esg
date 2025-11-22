@@ -1,5 +1,7 @@
 {
   "name": "ESG Fundamentals Academy",
   "description": "A comprehensive interactive e-learning platform for mastering ESG (Environmental, Social, and Governance) principles, featuring AI-driven tutoring and certification.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

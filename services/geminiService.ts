@@ -41,6 +41,72 @@ export const askAITutor = async (
   }
 };
 
+export const processVoiceQuery = async (
+  audioBlob: Blob,
+  context: string
+): Promise<{ text: string; audioUrl: string } | null> => {
+  const ai = getClient();
+  if (!ai) return null;
+
+  try {
+    // 1. Convert Blob to Base64
+    const base64Audio = await blobToBase64(audioBlob);
+
+    // 2. Get Text Answer
+    // We send the audio directly to the model
+    const model = "gemini-2.5-flash";
+    const prompt = `
+      You are an expert, friendly female ESG Tutor.
+      Context: ${context}
+      Listen to the student's question in the provided audio and answer concisely (max 2 sentences).
+      Tone: Warm, encouraging, like a helpful lecturer.
+    `;
+
+    const resp = await ai.models.generateContent({
+      model,
+      contents: {
+        parts: [
+          { 
+            inlineData: { 
+              mimeType: audioBlob.type || "audio/webm", 
+              data: base64Audio 
+            } 
+          },
+          { text: prompt }
+        ]
+      }
+    });
+
+    const answerText = resp.text || "I didn't quite catch that, could you repeat it?";
+
+    // 3. Get Audio for the answer (TTS)
+    const ttsResp = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: answerText }] }],
+      config: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Kore' }, // Female voice
+          },
+        },
+      },
+    });
+
+    const ttsBase64 = ttsResp.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!ttsBase64) return { text: answerText, audioUrl: "" };
+
+    const wavBlob = base64ToWavBlob(ttsBase64);
+    const audioUrl = URL.createObjectURL(wavBlob);
+
+    return { text: answerText, audioUrl };
+
+  } catch (e) {
+    console.error("Voice Query Error", e);
+    return null;
+  }
+};
+
 export const generateLessonVideo = async (
   prompt: string
 ): Promise<string | null> => {
@@ -114,12 +180,14 @@ export const generateAudioLecture = async (
   try {
     // 1. Generate the Script
     // We ask the model to write a script suitable for a mature British professor
+    // Explicitly instructing NO stage directions/markdown visuals to keep PDF clean.
     const scriptPrompt = `
       Write an engaging, educational lecture script for a university course.
       Topic: ${title}
       Key Concepts: ${summary}
       Persona: A distinguished, mature British professor. Deep, authoritative, yet warm voice.
-      Format: Monologue.
+      Format: Pure spoken monologue. 
+      Constraint: DO NOT include stage directions, scene descriptions, [brackets], or visual cues. Only write the words the professor speaks.
       Length: Approximately 400-500 words (roughly 3-4 minutes spoken).
       Content: Explain the concepts clearly, provide a real-world example, and explain why it matters. 
       Style: Use sophisticated but accessible language. 
@@ -164,6 +232,21 @@ export const generateAudioLecture = async (
     return null;
   }
 };
+
+// Helper: Convert Blob to Base64 string
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string;
+      // remove data:audio/wav;base64, prefix
+      const base64 = dataUrl.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 // Helper: Convert Base64 PCM string to WAV Blob
 function base64ToWavBlob(base64: string): Blob {
