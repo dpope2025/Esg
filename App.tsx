@@ -23,8 +23,8 @@ const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Cache for generated video URLs to prevent regeneration on navigation
   const [videoCache, setVideoCache] = useState<Record<string, string>>({});
-  // Cache for generated audio lectures
-  const [audioCache, setAudioCache] = useState<Record<string, string>>({});
+  // Cache for generated audio lectures AND scripts
+  const [audioCache, setAudioCache] = useState<Record<string, { url: string, script: string }>>({});
 
   // --- Effects ---
   useEffect(() => {
@@ -80,8 +80,8 @@ const App: React.FC = () => {
     setVideoCache(prev => ({ ...prev, [lessonId]: url }));
   };
 
-  const handleAudioGenerated = (lessonId: string, url: string) => {
-    setAudioCache(prev => ({ ...prev, [lessonId]: url }));
+  const handleAudioGenerated = (lessonId: string, data: { url: string, script: string }) => {
+    setAudioCache(prev => ({ ...prev, [lessonId]: data }));
   };
 
   const handleReset = () => {
@@ -108,6 +108,7 @@ const App: React.FC = () => {
   }
 
   const currentLesson = allLessons.find(l => l.id === user.currentLessonId);
+  const currentAudioData = audioCache[user.currentLessonId];
 
   // Render Course Layout
   return (
@@ -240,8 +241,9 @@ const App: React.FC = () => {
                     hasNext={hasNextLesson}
                     cachedVideoUrl={videoCache[currentLesson.id]}
                     onVideoGenerated={(url) => handleVideoGenerated(currentLesson.id, url)}
-                    cachedAudioUrl={audioCache[currentLesson.id]}
-                    onAudioGenerated={(url) => handleAudioGenerated(currentLesson.id, url)}
+                    cachedAudioUrl={currentAudioData?.url}
+                    cachedAudioScript={currentAudioData?.script}
+                    onAudioGenerated={(data) => handleAudioGenerated(currentLesson.id, data)}
                 />
             ) : (
                 <div className="flex items-center justify-center h-full text-slate-400">

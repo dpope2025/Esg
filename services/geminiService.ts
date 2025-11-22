@@ -107,7 +107,7 @@ export const generateLessonVideo = async (
 export const generateAudioLecture = async (
   title: string,
   summary: string
-): Promise<string | null> => {
+): Promise<{ audioUrl: string, script: string } | null> => {
   const ai = getClient();
   if (!ai) return null;
 
@@ -155,7 +155,9 @@ export const generateAudioLecture = async (
     // 3. Convert PCM to WAV
     // The API returns raw PCM (24kHz). Browsers need a WAV container to play it easily.
     const audioBlob = base64ToWavBlob(base64);
-    return URL.createObjectURL(audioBlob);
+    const audioUrl = URL.createObjectURL(audioBlob);
+
+    return { audioUrl, script };
 
   } catch (e) {
     console.error("Audio Gen Error", e);
