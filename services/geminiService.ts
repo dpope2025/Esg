@@ -84,8 +84,17 @@ export const generateLessonVideo = async (
     const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
     
     if (videoUri) {
-       // Append key for playback
-       return `${videoUri}&key=${process.env.API_KEY}`;
+       // Retrieve the actual video bytes to create a playable Blob URL
+       // This avoids CORS/Auth issues with playing the raw URI directly in a video tag
+       const apiKey = process.env.API_KEY;
+       const response = await fetch(`${videoUri}&key=${apiKey}`);
+       
+       if (!response.ok) {
+         throw new Error(`Failed to fetch video data: ${response.statusText}`);
+       }
+
+       const blob = await response.blob();
+       return URL.createObjectURL(blob);
     }
     
     return null;

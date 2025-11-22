@@ -55,7 +55,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ data, onStart }) => {
               <input
                 type="text"
                 id="name"
-                className={`w-full px-4 py-3 rounded-lg border ${error ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 focus:ring-2 focus:ring-emerald-500'} outline-none transition-all`}
+                className={`w-full px-4 py-3 rounded-lg border ${error ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-700 bg-slate-900 text-white placeholder-slate-400 focus:ring-2 focus:ring-emerald-500'} outline-none transition-all`}
                 placeholder="e.g. Jane Doe"
                 value={name}
                 onChange={(e) => {

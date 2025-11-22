@@ -21,6 +21,8 @@ const App: React.FC = () => {
   });
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Cache for generated video URLs to prevent regeneration on navigation
+  const [videoCache, setVideoCache] = useState<Record<string, string>>({});
 
   // --- Effects ---
   useEffect(() => {
@@ -70,6 +72,10 @@ const App: React.FC = () => {
       navigateToLesson('certificate');
       window.scrollTo(0,0);
     }
+  };
+
+  const handleVideoGenerated = (lessonId: string, url: string) => {
+    setVideoCache(prev => ({ ...prev, [lessonId]: url }));
   };
 
   // --- Views ---
@@ -198,6 +204,8 @@ const App: React.FC = () => {
                     isCompleted={user.completedLessonIds.includes(currentLesson.id)}
                     onNext={handleNextLesson}
                     hasNext={hasNextLesson}
+                    cachedVideoUrl={videoCache[currentLesson.id]}
+                    onVideoGenerated={(url) => handleVideoGenerated(currentLesson.id, url)}
                 />
             ) : (
                 <div className="flex items-center justify-center h-full text-slate-400">

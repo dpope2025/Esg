@@ -10,6 +10,8 @@ interface LessonViewProps {
   isCompleted: boolean;
   onNext: () => void;
   hasNext: boolean;
+  cachedVideoUrl?: string;
+  onVideoGenerated: (url: string) => void;
 }
 
 export const LessonView: React.FC<LessonViewProps> = ({ 
@@ -17,7 +19,9 @@ export const LessonView: React.FC<LessonViewProps> = ({
   onLessonComplete, 
   isCompleted,
   onNext,
-  hasNext
+  hasNext,
+  cachedVideoUrl,
+  onVideoGenerated
 }) => {
   const [activeTab, setActiveTab] = useState<'video' | 'summary'>('video');
   const [aiQuestion, setAiQuestion] = useState('');
@@ -27,9 +31,10 @@ export const LessonView: React.FC<LessonViewProps> = ({
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Video State
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
+  // Track if we've attempted generation for this lesson ID to avoid double calls
+  const generationAttemptedRef = useRef<string | null>(null);
 
   // Reset state when lesson changes
   useEffect(() => {
@@ -37,10 +42,41 @@ export const LessonView: React.FC<LessonViewProps> = ({
     setAiAnswer('');
     setAiQuestion('');
     setActiveTab('video');
-    setVideoUrl(null);
     setVideoError(null);
     setVideoLoading(false);
+    generationAttemptedRef.current = null;
   }, [lesson.id]);
+
+  // Auto-generate video if not cached
+  useEffect(() => {
+    const loadVideo = async () => {
+      // If we already have it, or are loading, or already tried for this lesson, skip
+      if (cachedVideoUrl || videoLoading || generationAttemptedRef.current === lesson.id) return;
+
+      generationAttemptedRef.current = lesson.id;
+      setVideoLoading(true);
+      setVideoError(null);
+
+      try {
+        const url = await generateLessonVideo(lesson.visual_guidance);
+        if (url) {
+          onVideoGenerated(url);
+        } else {
+          setVideoError("Could not retrieve video content. Please check your API key.");
+        }
+      } catch (err) {
+        console.error(err);
+        setVideoError("An error occurred while loading the video stream.");
+      } finally {
+        setVideoLoading(false);
+      }
+    };
+
+    // Trigger immediately on mount/change if in video tab
+    if (activeTab === 'video' && !cachedVideoUrl) {
+        loadVideo();
+    }
+  }, [lesson.id, cachedVideoUrl, activeTab, videoLoading, lesson.visual_guidance, onVideoGenerated]);
 
   const handleAskAI = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,21 +92,10 @@ export const LessonView: React.FC<LessonViewProps> = ({
     setAiLoading(false);
   };
 
-  const handleGenerateVideo = async () => {
-    setVideoLoading(true);
-    setVideoError(null);
-    try {
-      const url = await generateLessonVideo(lesson.visual_guidance);
-      if (url) {
-        setVideoUrl(url);
-      } else {
-        setVideoError("Could not generate video. Please check your API key settings.");
-      }
-    } catch (err) {
-        setVideoError("An error occurred while generating the video.");
-    } finally {
+  const retryGeneration = () => {
+      generationAttemptedRef.current = null;
       setVideoLoading(false);
-    }
+      // Effect will re-trigger
   };
 
   return (
@@ -112,60 +137,50 @@ export const LessonView: React.FC<LessonViewProps> = ({
           {activeTab === 'video' ? (
             <div className="space-y-6">
               <div className="bg-black rounded-xl overflow-hidden shadow-lg aspect-video relative group">
-                {videoUrl ? (
+                {cachedVideoUrl ? (
                   <video 
-                    src={videoUrl} 
+                    src={cachedVideoUrl} 
                     controls 
                     autoPlay 
                     className="w-full h-full object-cover"
                   />
                 ) : (
                   <>
-                     {/* Placeholder Visual */}
-                     <img src="https://picsum.photos/800/450?grayscale" alt="Video Placeholder" className="w-full h-full object-cover opacity-50" />
+                     {/* Background Placeholder */}
+                     <img src="https://picsum.photos/800/450?grayscale" alt="Video Placeholder" className="w-full h-full object-cover opacity-30" />
                      
                      {/* Overlay Content */}
                      <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-                        {videoLoading ? (
-                            <div className="bg-black/60 backdrop-blur-md p-6 rounded-2xl flex flex-col items-center animate-pulse">
-                                <Loader2 className="w-10 h-10 text-emerald-400 animate-spin mb-3" />
-                                <p className="text-white font-medium">Generating AI Video...</p>
-                                <p className="text-xs text-emerald-200 mt-1">This typically takes ~30-60 seconds</p>
-                            </div>
-                        ) : videoError ? (
+                        {videoError ? (
                             <div className="bg-black/60 backdrop-blur-md p-6 rounded-2xl flex flex-col items-center">
                                 <AlertCircle className="w-10 h-10 text-red-400 mb-3" />
-                                <p className="text-white font-medium">Generation Failed</p>
+                                <p className="text-white font-medium">Content Unavailable</p>
                                 <p className="text-xs text-red-200 mt-1 mb-3">{videoError}</p>
                                 <button 
-                                    onClick={handleGenerateVideo}
+                                    onClick={retryGeneration}
                                     className="px-4 py-2 bg-white text-black rounded-lg text-sm font-bold hover:bg-slate-200"
                                 >
-                                    Try Again
+                                    Retry Load
                                 </button>
                             </div>
                         ) : (
-                            <div className="bg-black/40 backdrop-blur-sm p-6 rounded-2xl flex flex-col items-center max-w-xs">
-                                <div className="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center shadow-xl mb-4">
-                                    <Video className="w-8 h-8 text-white" />
+                            <div className="bg-black/40 backdrop-blur-sm p-8 rounded-2xl flex flex-col items-center">
+                                <div className="relative">
+                                   <Loader2 className="w-12 h-12 text-emerald-400 animate-spin" />
+                                   <div className="absolute inset-0 flex items-center justify-center">
+                                     <Video className="w-5 h-5 text-emerald-400 opacity-50" />
+                                   </div>
                                 </div>
-                                <h3 className="text-white font-bold text-lg mb-2">AI Video Lesson</h3>
-                                <p className="text-slate-200 text-sm mb-6">
-                                    Generate a custom video for this lesson using Google's Veo model.
+                                <h3 className="text-white font-bold text-lg mt-4 mb-1">Retrieving Video Content</h3>
+                                <p className="text-slate-200 text-xs">
+                                    Generating AI visual components for this lesson...
                                 </p>
-                                <button 
-                                    onClick={handleGenerateVideo}
-                                    className="px-6 py-2.5 bg-white text-black rounded-full font-bold hover:bg-emerald-50 hover:text-emerald-700 transition-all transform hover:scale-105 active:scale-95 flex items-center"
-                                >
-                                    <PlayCircle className="w-4 h-4 mr-2" />
-                                    Generate Video
-                                </button>
                             </div>
                         )}
                      </div>
 
                      <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent text-white pointer-events-none">
-                       <p className="text-sm font-medium text-emerald-300 mb-1">Visual Prompt</p>
+                       <p className="text-sm font-medium text-emerald-300 mb-1">AI Director's Notes</p>
                        <p className="text-xs opacity-80 italic">{lesson.visual_guidance}</p>
                      </div>
                   </>
@@ -284,7 +299,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
                 value={aiQuestion}
                 onChange={(e) => setAiQuestion(e.target.value)}
                 placeholder="Ask a question..." 
-                className="w-full pl-3 pr-10 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                className="w-full pl-3 pr-10 py-2 text-sm border border-slate-700 bg-slate-900 text-white placeholder-slate-400 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
               />
               <button 
                 type="submit"
