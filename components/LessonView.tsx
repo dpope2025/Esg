@@ -180,7 +180,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
                      </div>
 
                      <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent text-white pointer-events-none">
-                       <p className="text-sm font-medium text-emerald-300 mb-1">AI Director's Notes</p>
+                       <p className="text-sm font-medium text-emerald-300 mb-1">Director's Notes</p>
                        <p className="text-xs opacity-80 italic">{lesson.visual_guidance}</p>
                      </div>
                   </>
@@ -188,7 +188,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
               </div>
 
               <div className="bg-slate-50 p-6 border-t border-slate-200 rounded-xl">
-                 <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Video Script</h4>
+                 <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Lesson Summary</h4>
                  <p className="text-slate-700 leading-relaxed font-serif text-lg">
                    "{lesson.video_script}"
                  </p>
@@ -265,14 +265,14 @@ export const LessonView: React.FC<LessonViewProps> = ({
 
         </div>
 
-        {/* Sidebar / AI Tutor */}
+        {/* Sidebar / Tutor */}
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-gradient-to-b from-indigo-50 to-white rounded-xl border border-indigo-100 p-6 shadow-sm sticky top-6">
             <div className="flex items-center space-x-2 mb-4">
               <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
                  <MessageSquare className="w-4 h-4 text-white" />
               </div>
-              <h3 className="font-bold text-slate-800">AI Tutor</h3>
+              <h3 className="font-bold text-slate-800">Tutor</h3>
             </div>
             
             <div className="text-sm text-slate-600 mb-4">

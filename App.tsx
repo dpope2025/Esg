@@ -4,7 +4,7 @@ import { COURSE_DATA } from './data';
 import { LandingPage } from './components/LandingPage';
 import { LessonView } from './components/LessonView';
 import { CertificateView } from './components/CertificateView';
-import { BookOpen, CheckCircle, Circle, Menu, X, GraduationCap, Lock } from 'lucide-react';
+import { BookOpen, CheckCircle, Circle, Menu, X, GraduationCap, Lock, LogOut } from 'lucide-react';
 
 const App: React.FC = () => {
   // --- State ---
@@ -76,6 +76,22 @@ const App: React.FC = () => {
 
   const handleVideoGenerated = (lessonId: string, url: string) => {
     setVideoCache(prev => ({ ...prev, [lessonId]: url }));
+  };
+
+  const handleReset = () => {
+    if (window.confirm("Are you sure you want to exit? This will reset all your progress.")) {
+      const initialState = {
+        name: '',
+        started: false,
+        completedLessonIds: [],
+        currentLessonId: COURSE_DATA.course.modules[0].lessons[0].id,
+        quizScores: {}
+      };
+      setUser(initialState);
+      setVideoCache({}); // Clear cached videos
+      localStorage.removeItem('esg_user');
+      setSidebarOpen(false);
+    }
   };
 
   // --- Views ---
@@ -186,6 +202,17 @@ const App: React.FC = () => {
                     {!isCourseComplete && <span className="text-xs ml-auto">(Locked)</span>}
                 </button>
            </div>
+        </div>
+
+        {/* Footer with Reset Button */}
+        <div className="p-4 border-t border-slate-800 bg-slate-900">
+            <button
+                onClick={handleReset}
+                className="w-full flex items-center justify-center space-x-2 px-4 py-2 text-slate-400 hover:text-red-200 hover:bg-red-900/30 rounded-lg transition-colors text-sm border border-transparent hover:border-red-900/50 group"
+            >
+                <LogOut className="w-4 h-4 group-hover:text-red-400 transition-colors" />
+                <span>Reset & Exit Course</span>
+            </button>
         </div>
       </aside>
 
